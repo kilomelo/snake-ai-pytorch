@@ -138,10 +138,25 @@ def train():
 
             plot_scores.append(score)
             total_score += score
-            mean_score = total_score / agent.n_games
+            # mean_score = total_score / agent.n_games
+            mean_score = average_of_last_n_items(plot_scores, 20)
             plot_mean_scores.append(mean_score)
             plot(plot_scores, plot_mean_scores)
 
+def average_of_last_n_items(lst, n):
+    # 边界情况：当n为0或负数时，返回None
+    if n <= 0:
+        return None
+    
+    # 边界情况：当列表为空时，返回None
+    if not lst:
+        return None
+
+    # 如果n大于列表的长度，使用整个列表
+    n = min(n, len(lst))
+    
+    # 使用切片获取末尾n项，并计算平均值
+    return sum(lst[-n:]) / n
 
 if __name__ == '__main__':
     train()
