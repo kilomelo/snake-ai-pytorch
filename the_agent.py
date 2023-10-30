@@ -1,3 +1,4 @@
+import pygame
 import torch
 import random
 import numpy as np
@@ -13,12 +14,12 @@ LR = 0.01
 
 class Agent:
 
-    def __init__(self, game):
+    def __init__(self, model):
         self.n_games = 0
         self.epsilon = 0 # randomness
-        self.gamma = 0.98 # discount rate
+        self.gamma = 0.9 # discount rate
         self.memory = deque(maxlen=MAX_MEMORY) # popleft()
-        self.model = Linear_QNet(game.width * game.height, 256, 3)
+        self.model = model
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
     def get_state(self, game):
@@ -46,9 +47,9 @@ class Agent:
 
     def get_action(self, state):
         # random moves: tradeoff exploration / exploitation
-        self.epsilon = max(0.02, 100 - self.n_games * 0.002)
+        self.epsilon = max(0.3, 0.7 - self.n_games * 0.0005)
         final_move = [0,0,0]
-        if random.randint(0, 100) < self.epsilon:
+        if random.random() < self.epsilon:
             move = random.randint(0, 2)
             final_move[move] = 1
         else:
@@ -64,10 +65,12 @@ def train():
     plot_mean_scores = []
     total_score = 0
     record = 0
-    game = SnakeGame(5, 4)
-    agent = Agent(game)
+    game = SnakeGame(4, 3)
+    model = Linear_QNet(game.width * game.height, 256, 3)
+    model.load()
+    agent = Agent(model)
 
-    
+    quit_train = False
     while True:
         # get old state
         state_old = agent.get_state(game)
@@ -76,7 +79,8 @@ def train():
         final_move = agent.get_action(state_old)
 
         # perform move and get new state
-        reward, done, score = game.play_step(final_move)
+        reward, done, score, user_quit = game.play_step(final_move)
+        quit_train = quit_train or user_quit
         state_new = agent.get_state(game)
 
         # train short memory
@@ -93,16 +97,21 @@ def train():
 
             if score > record:
                 record = score
-                agent.model.save()
+                # agent.model.save()
 
-            print('Game', agent.n_games, 'Score', score, 'Record:', record)
+            print('Game', agent.n_games, 'Score', score, 'Record:', record, 'Epsilon:', agent.epsilon)
 
             plot_scores.append(score)
             total_score += score
             # mean_score = total_score / agent.n_games
-            mean_score = average_of_last_n_items(plot_scores, 20)
+            mean_score = average_of_last_n_items(plot_scores, 100)
             plot_mean_scores.append(mean_score)
             plot(plot_scores, plot_mean_scores)
+
+            if user_quit:
+                agent.model.save()
+                pygame.quit()
+                quit()
 
 def average_of_last_n_items(lst, n):
     # 边界情况：当n为0或负数时，返回None

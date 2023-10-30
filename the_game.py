@@ -23,7 +23,7 @@ BLUE2 = (0, 100, 255)
 BLACK = (0,0,0)
 
 BLOCK_SIZE = 80
-SPEED = 500
+SPEED = 1
 
 class SnakeGame:
     def __init__(self, width, height):
@@ -44,7 +44,7 @@ class SnakeGame:
         self.snake = [
             self.head,
             Point(self.head.x - 1, self.head.y),
-            Point(self.head.x - 2, self.head.y)
+            # Point(self.head.x - 2, self.head.y)
         ]
         self.map[self.head.x, self.head.y] = 1
         for body in self.snake[1:]:
@@ -64,14 +64,17 @@ class SnakeGame:
             self.map[self.food.x, self.food.y] = 3
 
     def play_step(self, action):
+        user_quit = False
         self.frame_iteration += 1
         # wait_for_continue = True
         # while wait_for_continue:
             # 1. collect user input
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                quit()
+                # pygame.quit()
+                user_quit = True
+                break
+                # quit()
                 # if event.type == pygame.KEYDOWN:
                     # if event.key == pygame.K_SPACE:
                         # wait_for_continue = False
@@ -91,7 +94,7 @@ class SnakeGame:
         if self.is_collision() or self.frame_iteration > 100*len(self.snake):
             game_over = True
             reward = -10
-            return reward, game_over, self.score
+            return reward, game_over, self.score, user_quit
         
         self.map[self.head.x, self.head.y] = 1
         
@@ -105,11 +108,12 @@ class SnakeGame:
             self.map[tail.x, tail.y] = 0
 
         # 5. update ui and clock
-        self._update_ui()
-        self.clock.tick(SPEED)
+        if not user_quit:
+            self._update_ui()
+            self.clock.tick(SPEED)
 
         # 6. return game over and score
-        return reward, game_over, self.score
+        return reward, game_over, self.score, user_quit
 
     def is_collision(self, pt=None):
         if pt is None:

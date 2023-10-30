@@ -1,72 +1,35 @@
+import pygame
 import torch
 import random
 import numpy as np
 from collections import deque
-from game import SnakeGameAI, Direction, Point
+from a_game import SnakeGame, Direction, Point
 from model import Linear_QNet, QTrainer
 from helper import plot
 
 MAX_MEMORY = 100_000
-BATCH_SIZE = 1000
-LR = 0.001
+BATCH_SIZE = 500
+GAMMA = 0.9 # discount rate
+MAX_EPSILON = 1
+MIN_EPSILON = 0.01
+EPSILON_DICREASE_RATE = 0.001
+
+LR = 0.01
 
 class Agent:
 
-    def __init__(self):
+    def __init__(self, model):
         self.n_games = 0
         self.epsilon = 0 # randomness
-        self.gamma = 0.9 # discount rate
+        self.gamma = GAMMA
         self.memory = deque(maxlen=MAX_MEMORY) # popleft()
-        self.model = Linear_QNet(11, 256, 3)
-        self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
-
+        self.model = model
+        self.trainer = QTrainer(self.model, lr=LR, gamma=GAMMA)
 
     def get_state(self, game):
-        head = game.snake[0]
-        point_l = Point(head.x - 20, head.y)
-        point_r = Point(head.x + 20, head.y)
-        point_u = Point(head.x, head.y - 20)
-        point_d = Point(head.x, head.y + 20)
-        
-        dir_l = game.direction == Direction.LEFT
-        dir_r = game.direction == Direction.RIGHT
-        dir_u = game.direction == Direction.UP
-        dir_d = game.direction == Direction.DOWN
-
-        state = [
-            # Danger straight
-            (dir_r and game.is_collision(point_r)) or 
-            (dir_l and game.is_collision(point_l)) or 
-            (dir_u and game.is_collision(point_u)) or 
-            (dir_d and game.is_collision(point_d)),
-
-            # Danger right
-            (dir_u and game.is_collision(point_r)) or 
-            (dir_d and game.is_collision(point_l)) or 
-            (dir_l and game.is_collision(point_u)) or 
-            (dir_r and game.is_collision(point_d)),
-
-            # Danger left
-            (dir_d and game.is_collision(point_r)) or 
-            (dir_u and game.is_collision(point_l)) or 
-            (dir_r and game.is_collision(point_u)) or 
-            (dir_l and game.is_collision(point_d)),
-            
-            # Move direction
-            dir_l,
-            dir_r,
-            dir_u,
-            dir_d,
-            
-            # Food location 
-            game.food.x < game.head.x,  # food left
-            game.food.x > game.head.x,  # food right
-            game.food.y < game.head.y,  # food up
-            game.food.y > game.head.y  # food down
-            ]
-
-        return np.array(state, dtype=int)
-
+        state = game.map.flatten()
+        return state
+    
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done)) # popleft if MAX_MEMORY is reached
 
@@ -86,10 +49,11 @@ class Agent:
 
     def get_action(self, state):
         # random moves: tradeoff exploration / exploitation
-        self.epsilon = max(0.01, 1 - self.n_games * 0.001)
-        final_move = [0,0,0]
+        self.epsilon = max(MIN_EPSILON, MAX_EPSILON - self.n_games * EPSILON_DICREASE_RATE)
+        final_move = np.array([0,0,0,0])
         if random.random() < self.epsilon:
-            move = random.randint(0, 2)
+        # if False:
+            move = random.randint(0, 3)
             final_move[move] = 1
         else:
             state0 = torch.tensor(state, dtype=torch.float)
@@ -100,16 +64,62 @@ class Agent:
         return final_move
 
 
+FRAME_RATE = 1
+# rgb colors
+WHITE = (255, 255, 255)
+RED = (200,0,0)
+BLUE1 = (0, 0, 255)
+BLUE2 = (0, 100, 255)
+BLACK = (0,0,0)
+
+BLOCK_SIZE = 80
+
 def train():
+    width = 4
+    height = 3
     plot_scores = []
     plot_mean_scores = []
     total_score = 0
     record = 0
-    agent = Agent()
-    game = SnakeGameAI()
+    game = SnakeGame(width, height)
+    model = Linear_QNet(game.width * game.height, 64, 4)
+    # model.load()
+    agent = Agent(model)
+
+    pygame.init()
+    display = pygame.display.set_mode((width * BLOCK_SIZE, height * BLOCK_SIZE))
+    pygame.display.set_caption('Snake')
+    clock = pygame.time.Clock()
+    font = pygame.font.Font('arial.ttf', 25)
+    # 是否观察游戏过程
+    observe = False
     while True:
+        if observe:
+            display.fill(BLACK)
+            for (x, y), value in np.ndenumerate(game.map):
+                if value == 1:
+                    pygame.draw.rect(display, BLUE1, pygame.Rect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE))
+                elif value == 2:
+                    pygame.draw.rect(display, BLUE2, pygame.Rect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE))
+                elif value == 3:
+                    pygame.draw.rect(display, RED, pygame.Rect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE))
+
+            text = font.render("Score: " + str(game.score), True, WHITE)
+            display.blit(text, [0, 0])
+            pygame.display.flip()
+            clock.tick(FRAME_RATE)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                # agent.model.save()
+                pygame.quit()
+                quit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    observe = not observe
+
         # get old state
         state_old = agent.get_state(game)
+        # print('state_old:', state_old)
 
         # get move
         final_move = agent.get_action(state_old)
@@ -117,7 +127,8 @@ def train():
         # perform move and get new state
         reward, done, score = game.play_step(final_move)
         state_new = agent.get_state(game)
-
+        # print('reward:', reward)
+        # print('state_new:', state_new)
         # train short memory
         agent.train_short_memory(state_old, final_move, reward, state_new, done)
 
@@ -139,7 +150,7 @@ def train():
             plot_scores.append(score)
             total_score += score
             # mean_score = total_score / agent.n_games
-            mean_score = average_of_last_n_items(plot_scores, 20)
+            mean_score = average_of_last_n_items(plot_scores, 100)
             plot_mean_scores.append(mean_score)
             plot(plot_scores, plot_mean_scores)
 
