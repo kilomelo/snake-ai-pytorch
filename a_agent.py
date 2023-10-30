@@ -93,6 +93,7 @@ def train():
     font = pygame.font.Font('arial.ttf', 25)
     # 是否观察游戏过程
     observe = False
+    state_old = agent.get_state(game)
     while True:
         if observe:
             display.fill(BLACK)
@@ -118,7 +119,7 @@ def train():
                     observe = not observe
 
         # get old state
-        state_old = agent.get_state(game)
+        # state_old = agent.get_state(game)
         # print('state_old:', state_old)
 
         # get move
@@ -134,6 +135,8 @@ def train():
 
         # remember
         agent.remember(state_old, final_move, reward, state_new, done)
+
+        state_old = state_new
 
         if done:
             # train long memory, plot result
